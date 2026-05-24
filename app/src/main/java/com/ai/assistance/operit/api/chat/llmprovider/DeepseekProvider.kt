@@ -8,6 +8,7 @@ import com.ai.assistance.operit.data.model.ModelParameter
 import com.ai.assistance.operit.data.model.ToolPrompt
 import com.ai.assistance.operit.data.preferences.ApiPreferences
 import com.ai.assistance.operit.util.ChatUtils
+import com.ai.assistance.operit.util.ReasonixCacheOptimizer
 import com.ai.assistance.operit.util.stream.Stream
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -147,7 +148,8 @@ class DeepseekProvider(
                 providerReadyHistory,
                 effectiveEnableToolCall
             )
-        jsonObject.put("messages", messagesArray)
+        val healedMessages = ReasonixCacheOptimizer.healMessagesBeforeSend(messagesArray, modelName)
+        jsonObject.put("messages", healedMessages)
 
         // 记录最终的请求体（省略过长的tools字段）
         val logJson = JSONObject(jsonObject.toString())
