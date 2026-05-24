@@ -94,3 +94,13 @@
 # Reactor BlockHound integration with Netty
 -dontwarn reactor.blockhound.integration.BlockHoundIntegration
 -dontwarn io.netty.util.internal.Hidden$NettyBlockHoundIntegration
+
+# SSH/Mina/EdDSA dependencies - dont warn about missing optional crypto classes
+-dontwarn net.i2p.crypto.eddsa.**
+-dontwarn org.apache.sshd.**
+-dontwarn org.bouncycastle.**
+-keep class org.apache.sshd.** { *; }
+-keep class net.i2p.crypto.eddsa.** { *; }
+
+# Keep ReasonixCacheOptimizer (our custom optimization)
+-keep class com.ai.assistance.operit.util.ReasonixCacheOptimizer { *; }
