@@ -30,6 +30,16 @@ jobs:
           build-tools: "36.0.0"
           cmake: "3.22.1"
 
+      - name: Download vendored libs from Google Drive
+        run: |
+          pip install gdown
+          mkdir -p app/libs
+          gdown --folder "1g-Q_i7cf6Ua4KX9ZM6V282EEZvTVVfF7" -O /tmp/drive_dl/ --remaining-ok
+          if [ -f /tmp/drive_dl/libs.zip ]; then
+            unzip -o /tmp/drive_dl/libs.zip -d app/libs/
+          fi
+          ls -la app/libs/
+
       - name: Generate local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
@@ -38,10 +48,8 @@ jobs:
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --install "ndk;27.0.12077973"
           echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/27.0.12077973" >> local.properties
 
-      - name: Ensure libs dir & gradlew perm
-        run: |
-          mkdir -p app/libs
-          chmod +x gradlew
+      - name: Grant gradlew execute permission
+        run: chmod +x gradlew
 
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
