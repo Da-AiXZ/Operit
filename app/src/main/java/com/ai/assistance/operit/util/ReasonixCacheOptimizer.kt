@@ -1,11 +1,22 @@
 package com.ai.assistance.operit.util
 
-import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 object ReasonixCacheOptimizer {
-    private const val TAG = "ReasonixCache"
+    private val LOG_FILE = File("/storage/emulated/0/1/app制作工具/1/检测", "reasonix_verify.txt")
+    
+    private fun log(msg: String) {
+        try {
+            LOG_FILE.parentFile?.mkdirs()
+            val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+            LOG_FILE.appendText("[$ts] $msg\n")
+        } catch (_: Exception) {}
+    }
     
     fun isThinkingModeModel(model: String): Boolean = 
         ("reasoner" in model || model == "deepseek-v4-flash" || model == "deepseek-v4-pro" ||
@@ -20,7 +31,7 @@ object ReasonixCacheOptimizer {
     
     fun stampMissingReasoning(messages: JSONArray, model: String): Pair<JSONArray, Int> {
         if (!isThinkingModeModel(model)) {
-            Log.d(TAG, "stampMissingReasoning: skip (not thinking mode: $model)")
+            log("stampMissingReasoning: 跳过 (非thinking模型: $model)")
             return Pair(messages, 0)
         }
         var stamped = 0
@@ -33,7 +44,7 @@ object ReasonixCacheOptimizer {
             }
             out.put(msg)
         }
-        Log.d(TAG, "stampMissingReasoning: patched $stamped messages")
+        log("stampMissingReasoning: 补了 $stamped 条消息的 reasoning_content")
         return Pair(out, stamped)
     }
     
@@ -44,15 +55,18 @@ object ReasonixCacheOptimizer {
             if (role == "user" || role == "developer") { lastUserIdx = i; break }
         }
         if (lastUserIdx < 0) {
-            Log.d(TAG, "dropThinkingMessages: no user/developer found, skip")
+            log("dropThinkingMessages: 无用户消息, 跳过")
             return messages
         }
         val out = JSONArray()
         var stripped = 0
+        var estSavedTokens = 0
         for (i in 0 until messages.length()) {
             val msg = messages.getJSONObject(i)
             if (i < lastUserIdx && msg.optString("role") == "developer") continue
             if (i < lastUserIdx && msg.optString("role") == "assistant") {
+                val rc = msg.optString("reasoning_content", "")
+                estSavedTokens += rc.length / 4
                 val cleaned = JSONObject(msg.toString())
                 cleaned.put("reasoning_content", JSONObject.NULL)
                 out.put(cleaned)
@@ -61,7 +75,7 @@ object ReasonixCacheOptimizer {
                 out.put(msg)
             }
         }
-        Log.d(TAG, "dropThinkingMessages: stripped $stripped historical thinking blocks")
+        log("dropThinkingMessages: 剥掉 $stripped 条历史thinking, 省约 ${estSavedTokens} token")
         return out
     }
     
@@ -81,8 +95,8 @@ object ReasonixCacheOptimizer {
             newMsg.put("content", truncated)
             out.put(newMsg)
         }
-        if (healed > 0) Log.d(TAG, "shrinkOversizedToolResults: shrunk $healed tool results (max ${maxChars} chars)")
-        else Log.d(TAG, "shrinkOversizedToolResults: no oversized results")
+        if (healed > 0) log("shrinkOversizedToolResults: 截断 $healed 个超大工具结果")
+        else log("shrinkOversizedToolResults: 无超大结果, 跳过")
         return Pair(out, healed)
     }
     
@@ -92,8 +106,7 @@ object ReasonixCacheOptimizer {
         val tailLen = (maxChars * 0.20).toInt()
         val head = text.take(headLen)
         val tail = text.takeLast(tailLen)
-        return head + "\n...[truncated: " + text.length + " -> " + maxChars + " chars, " +
-            text.lines().size + " lines total]\n" + tail
+        return head + "\n...[截断: " + text.length + " -> " + maxChars + " 字符, " + text.lines().size + " 行]\n" + tail
     }
     
     fun fixToolCallPairing(messages: JSONArray): Pair<JSONArray, Int> {
@@ -137,15 +150,16 @@ object ReasonixCacheOptimizer {
             }
             i++
         }
-        if (dropped > 0) Log.w(TAG, "fixToolCallPairing: dropped $dropped unpaired/stray messages")
-        else Log.d(TAG, "fixToolCallPairing: no pairing issues")
+        if (dropped > 0) log("fixToolCallPairing: 移除 $dropped 条孤立/未配对消息")
+        else log("fixToolCallPairing: 无配对问题, 跳过")
         return Pair(out, dropped)
     }
     
     fun healMessagesBeforeSend(messages: JSONArray, model: String, enableDropThinking: Boolean = true): JSONArray {
         val t0 = System.currentTimeMillis()
         val origCount = messages.length()
-        Log.d(TAG, "healMessagesBeforeSend: IN messages=$origCount model=$model dropThinking=$enableDropThinking")
+        log("========== healMessagesBeforeSend 开始 ==========")
+        log("  消息数: $origCount  模型: $model  dropThinking: $enableDropThinking")
         
         var working = messages
         val (stamped, stampCount) = stampMissingReasoning(working, model)
@@ -162,7 +176,8 @@ object ReasonixCacheOptimizer {
         working = paired
         
         val elapsed = System.currentTimeMillis() - t0
-        Log.d(TAG, "healMessagesBeforeSend: OUT messages=${working.length()} stamp=$stampCount shrink=$shrinkCount drop=$dropCount (${elapsed}ms)")
+        log("  完成: 消息 ${origCount}→${working.length()} | stamp=$stampCount shrink=$shrinkCount drop=$dropCount | 耗时 ${elapsed}ms")
+        log("================================================")
         return working
     }
 }
