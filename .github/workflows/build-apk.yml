@@ -33,37 +33,32 @@ jobs:
       - name: Download vendored dependencies from Google Drive
         run: |
           pip install gdown
-          # Download entire folder (each file individually to handle failures)
           FOLDER_ID="1g-Q_i7cf6Ua4KX9ZM6V282EEZvTVVfF7"
-          mkdir -p /tmp/gdrive
-          cd /tmp/gdrive
           
-          # Try to download all files from the folder using wget fallback
-          gdown "https://drive.google.com/drive/folders/${FOLDER_ID}" --folder -O /tmp/gdrive/ 2>&1 || echo "gdown folder download finished (some files may have failed)"
+          # Download folder to tmp first, then move files to correct locations
+          gdown "https://drive.google.com/drive/folders/${FOLDER_ID}" --folder -O /tmp/gdrive/ 2>&1 || true
           
-          echo "=== Files downloaded: ==="
-          ls -laR /tmp/gdrive/
+          echo "=== Downloaded files: ==="
+          find /tmp/gdrive -name "*.zip" -ls
           
-          # Find and extract zips
+          # Extract zips: the zips INTERNALLY have app/libs/ and app/src/main/jniLibs/ paths
+          # We must extract at workspace ROOT (not inside app/libs/)
           for ZIP in $(find /tmp/gdrive -name "libs.zip" -o -name "jniLibs.zip" 2>/dev/null); do
-            echo "Found: $ZIP"
-            case "$(basename $ZIP)" in
-              libs.zip)
-                mkdir -p app/libs
-                unzip -o "$ZIP" -d app/libs/
-                echo "libs.zip extracted, count: $(ls app/libs/ | wc -l)"
-                ;;
-              jniLibs.zip)
-                mkdir -p app/src/main/jniLibs
-                unzip -o "$ZIP" -d app/src/main/jniLibs/
-                echo "jniLibs.zip extracted"
-                ;;
-            esac
+            echo "Extracting $ZIP to workspace root..."
+            unzip -o "$ZIP" -d .
           done
           
-          # Verify critical dirs exist
-          echo "=== libs: ===" && ls app/libs/ 2>/dev/null | head -10
-          echo "=== jniLibs: ===" && ls app/src/main/jniLibs/ 2>/dev/null | head -10
+          echo "=== Verify paths: ==="
+          echo "app/libs contents:" && ls app/libs/ 2>/dev/null | head -10
+          echo "app/src/main/jniLibs/arm64-v8a:" && ls app/src/main/jniLibs/arm64-v8a/ 2>/dev/null | head -10
+          
+          # Critical: check that the AAR is in the right place
+          if [ -f app/libs/ffmpeg-kit-local.aar ]; then
+            echo "FFmpeg AAR FOUND at correct path ✓"
+          else
+            echo "ERROR: ffmpeg-kit-local.aar NOT at app/libs/"
+            find . -name "ffmpeg-kit-local.aar" -ls
+          fi
 
       - name: Generate local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
