@@ -104,3 +104,22 @@
 
 # Keep ReasonixCacheOptimizer (our custom optimization)
 -keep class com.ai.assistance.operit.util.ReasonixCacheOptimizer { *; }
+
+# Don't warn about missing optional/compile-only dependencies
+-dontwarn com.gemalto.jp2.**
+-dontwarn java.beans.**
+-dontwarn javax.lang.model.**
+-dontwarn io.micrometer.context.**
+-dontwarn reactor.util.context.**
+-dontwarn autovalue.shaded.com.squareup.javapoet.**
+
+# SSH/Mina/EdDSA dependencies
+-dontwarn net.i2p.crypto.eddsa.**
+-dontwarn org.apache.sshd.**
+-dontwarn org.bouncycastle.**
+
+# Keep ReasonixCacheOptimizer
+-keep class com.ai.assistance.operit.util.ReasonixCacheOptimizer { *; }
+
+# Ignore R8 missing class warnings for optional deps
+-ignorewarnings
