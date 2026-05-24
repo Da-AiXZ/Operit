@@ -95,12 +95,19 @@
 -dontwarn reactor.blockhound.integration.BlockHoundIntegration
 -dontwarn io.netty.util.internal.Hidden$NettyBlockHoundIntegration
 
-# SSH/Mina/EdDSA dependencies - dont warn about missing optional crypto classes
+# SSH/Mina/EdDSA dependencies
 -dontwarn net.i2p.crypto.eddsa.**
 -dontwarn org.apache.sshd.**
--dontwarn org.bouncycastle.**
 -keep class org.apache.sshd.** { *; }
 -keep class net.i2p.crypto.eddsa.** { *; }
+
+# ========== BouncyCastle BKS Keystore — fix SSL crash on Release ==========
+# R8 strips BKS provider classes unless explicitly kept
+-keep class org.bouncycastle.jcajce.provider.keystore.bc.BcKeyStoreSpi { *; }
+-keep class org.bouncycastle.jcajce.provider.keystore.bc.BcKeyStoreSpi$BKS { *; }
+-keep class org.bouncycastle.jce.provider.BouncyCastleProvider { *; }
+-keep class org.bouncycastle.jcajce.provider.keystore.** { *; }
+-dontwarn org.bouncycastle.**
 
 # Keep ReasonixCacheOptimizer (our custom optimization)
 -keep class com.ai.assistance.operit.util.ReasonixCacheOptimizer { *; }
@@ -112,14 +119,6 @@
 -dontwarn io.micrometer.context.**
 -dontwarn reactor.util.context.**
 -dontwarn autovalue.shaded.com.squareup.javapoet.**
-
-# SSH/Mina/EdDSA dependencies
--dontwarn net.i2p.crypto.eddsa.**
--dontwarn org.apache.sshd.**
--dontwarn org.bouncycastle.**
-
-# Keep ReasonixCacheOptimizer
--keep class com.ai.assistance.operit.util.ReasonixCacheOptimizer { *; }
 
 # Ignore R8 missing class warnings for optional deps
 -ignorewarnings
