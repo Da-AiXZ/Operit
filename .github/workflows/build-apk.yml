@@ -11,23 +11,23 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - name: Checkout code
+      - name: Checkout with top-level submodules
         uses: actions/checkout@v4
         with:
-          submodules: false
+          submodules: true
           fetch-depth: 0
 
-      - name: Init submodules
+      - name: Recursive submodule init (with bullet3 fix)
         run: |
-          git submodule sync --recursive
-          git submodule update --init --recursive 2>&1 || echo "Warning: some submodules may be missing (non-critical)"
-          # bullet3 stub for saba dependency that isn't in parent .gitmodules
-          [ -d mmd/third_party/saba/third_party ] && [ ! -f mmd/third_party/saba/third_party/bullet3/CMakeLists.txt ] && {
-            mkdir -p mmd/third_party/saba/third_party/bullet3
-            echo "project(bullet3)" > mmd/third_party/saba/third_party/bullet3/CMakeLists.txt
-            echo "cmake_minimum_required(VERSION 3.10)" >> mmd/third_party/saba/third_party/bullet3/CMakeLists.txt
+          git submodule foreach --recursive 'git submodule update --init 2>/dev/null || true'
+          # bullet3 stub for saba
+          mkdir -p mmd/third_party/saba/third_party/bullet3
+          [ ! -f mmd/third_party/saba/third_party/bullet3/CMakeLists.txt ] && {
+            echo "cmake_minimum_required(VERSION 3.10)" > mmd/third_party/saba/third_party/bullet3/CMakeLists.txt
+            echo "project(bullet3)" >> mmd/third_party/saba/third_party/bullet3/CMakeLists.txt
           }
-          ls -la terminal/ terminal/src 2>/dev/null || echo "WARNING: terminal submodule missing!"
+          echo "=== Submodule status ==="
+          git submodule status
 
       - name: Set up JDK17
         uses: actions/setup-java@v4
@@ -43,19 +43,17 @@ jobs:
           cmake: "3.22.1"
 
       - name: Generate local.properties
-        run: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
       - name: Install exact NDK version
         run: |
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --install "ndk;27.0.12077973"
           echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/27.0.12077973" >> local.properties
 
-      - name: Ensure libs directory exists
-        run: mkdir -p app/libs
-
-      - name: Grant gradlew execute permission
-        run: chmod +x gradlew
+      - name: Ensure libs dir & gradlew perm
+        run: |
+          mkdir -p app/libs
+          chmod +x gradlew
 
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
