@@ -17,14 +17,17 @@ jobs:
           submodules: false
           fetch-depth: 0
 
-      - name: Init submodules manually
+      - name: Init submodules
         run: |
           git submodule sync --recursive
-          git submodule update --init --recursive || true
-          if [ -d mmd/third_party/saba/third_party ] && [ ! -f mmd/third_party/saba/third_party/bullet3/CMakeLists.txt ]; then
+          git submodule update --init --recursive 2>&1 || echo "Warning: some submodules may be missing (non-critical)"
+          # bullet3 stub for saba dependency that isn't in parent .gitmodules
+          [ -d mmd/third_party/saba/third_party ] && [ ! -f mmd/third_party/saba/third_party/bullet3/CMakeLists.txt ] && {
             mkdir -p mmd/third_party/saba/third_party/bullet3
             echo "project(bullet3)" > mmd/third_party/saba/third_party/bullet3/CMakeLists.txt
-          fi
+            echo "cmake_minimum_required(VERSION 3.10)" >> mmd/third_party/saba/third_party/bullet3/CMakeLists.txt
+          }
+          ls -la terminal/ terminal/src 2>/dev/null || echo "WARNING: terminal submodule missing!"
 
       - name: Set up JDK17
         uses: actions/setup-java@v4
