@@ -1,42 +1,28 @@
 package com.ai.assistance.operit.util
 
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * Reasonix cache-first core - ported from DeepSeek-Reasonix (MIT)
- *
- * DeepSeek API prompt caching is prefix-based. Three invariants:
- * 1. Every assistant message MUST carry reasoning_content (even empty string).
- * 2. Strip reasoning_content from historical assistant messages to preserve cache prefix.
- * 3. Shrink oversized tool results to maintain prefix continuity.
- *
- * Reference: DeepSeek-Reasonix/src/loop/{healing.ts, thinking.ts, messages.ts, shrink.ts}
- */
 object ReasonixCacheOptimizer {
-
-    /** True when the model emits reasoning_content and requires it round-tripped. */
-    fun isThinkingModeModel(model: String): Boolean {
-        if ("reasoner" in model) return true
-        if (model == "deepseek-v4-flash" || model == "deepseek-v4-pro") return true
-        if (model.contains("deepseek", ignoreCase = true) && model != "deepseek-chat") return true
-        return false
+    private const val TAG = "ReasonixCache"
+    
+    fun isThinkingModeModel(model: String): Boolean = 
+        ("reasoner" in model || model == "deepseek-v4-flash" || model == "deepseek-v4-pro" ||
+         (model.contains("deepseek", ignoreCase = true) && model != "deepseek-chat"))
+    
+    fun thinkingModeForModel(model: String): String? = when {
+        model == "deepseek-chat" -> "disabled"
+        "reasoner" in model -> "enabled"
+        model == "deepseek-v4-flash" || model == "deepseek-v4-pro" -> "enabled"
+        else -> null
     }
-
-    /** Pins extra_body.thinking.type; unknown returns null for server default. */
-    fun thinkingModeForModel(model: String): String? {
-        if (model == "deepseek-chat") return "disabled"
-        if ("reasoner" in model) return "enabled"
-        if (model == "deepseek-v4-flash" || model == "deepseek-v4-pro") return "enabled"
-        return null
-    }
-
-    /**
-     * Ensure all assistant messages carry reasoning_content.
-     * Without this, DeepSeek API returns 400 on thinking-mode models.
-     */
+    
     fun stampMissingReasoning(messages: JSONArray, model: String): Pair<JSONArray, Int> {
-        if (!isThinkingModeModel(model)) return Pair(messages, 0)
+        if (!isThinkingModeModel(model)) {
+            Log.d(TAG, "stampMissingReasoning: skip (not thinking mode: $model)")
+            return Pair(messages, 0)
+        }
         var stamped = 0
         val out = JSONArray()
         for (i in 0 until messages.length()) {
@@ -47,24 +33,22 @@ object ReasonixCacheOptimizer {
             }
             out.put(msg)
         }
+        Log.d(TAG, "stampMissingReasoning: patched $stamped messages")
         return Pair(out, stamped)
     }
-
-    /**
-     * Drop reasoning_content from assistant messages before the last user/developer.
-     * Historical reasoning_content wastes tokens and risks cache-prefix invalidation.
-     */
+    
     fun dropThinkingMessages(messages: JSONArray): JSONArray {
         var lastUserIdx = -1
         for (i in messages.length() - 1 downTo 0) {
             val role = messages.getJSONObject(i).optString("role")
-            if (role == "user" || role == "developer") {
-                lastUserIdx = i
-                break
-            }
+            if (role == "user" || role == "developer") { lastUserIdx = i; break }
         }
-        if (lastUserIdx < 0) return messages
+        if (lastUserIdx < 0) {
+            Log.d(TAG, "dropThinkingMessages: no user/developer found, skip")
+            return messages
+        }
         val out = JSONArray()
+        var stripped = 0
         for (i in 0 until messages.length()) {
             val msg = messages.getJSONObject(i)
             if (i < lastUserIdx && msg.optString("role") == "developer") continue
@@ -72,42 +56,36 @@ object ReasonixCacheOptimizer {
                 val cleaned = JSONObject(msg.toString())
                 cleaned.put("reasoning_content", JSONObject.NULL)
                 out.put(cleaned)
+                stripped++
             } else {
                 out.put(msg)
             }
         }
+        Log.d(TAG, "dropThinkingMessages: stripped $stripped historical thinking blocks")
         return out
     }
-
+    
     private const val DEFAULT_MAX_RESULT_CHARS = 24000
-
-    /** Shrink oversized tool messages to maintain cache prefix continuity. */
-    fun shrinkOversizedToolResults(
-        messages: JSONArray,
-        maxChars: Int = DEFAULT_MAX_RESULT_CHARS
-    ): Pair<JSONArray, Int> {
+    
+    fun shrinkOversizedToolResults(messages: JSONArray, maxChars: Int = DEFAULT_MAX_RESULT_CHARS): Pair<JSONArray, Int> {
         var healed = 0
         val out = JSONArray()
         for (i in 0 until messages.length()) {
             val msg = messages.getJSONObject(i)
-            if (msg.optString("role") != "tool") {
-                out.put(msg)
-                continue
-            }
+            if (msg.optString("role") != "tool") { out.put(msg); continue }
             val content = msg.optString("content", "")
-            if (content.length <= maxChars) {
-                out.put(msg)
-                continue
-            }
+            if (content.length <= maxChars) { out.put(msg); continue }
             healed++
             val truncated = truncateForModel(content, maxChars)
             val newMsg = JSONObject(msg.toString())
             newMsg.put("content", truncated)
             out.put(newMsg)
         }
+        if (healed > 0) Log.d(TAG, "shrinkOversizedToolResults: shrunk $healed tool results (max ${maxChars} chars)")
+        else Log.d(TAG, "shrinkOversizedToolResults: no oversized results")
         return Pair(out, healed)
     }
-
+    
     private fun truncateForModel(text: String, maxChars: Int): String {
         if (text.length <= maxChars) return text
         val headLen = (maxChars * 0.80).toInt()
@@ -117,8 +95,7 @@ object ReasonixCacheOptimizer {
         return head + "\n...[truncated: " + text.length + " -> " + maxChars + " chars, " +
             text.lines().size + " lines total]\n" + tail
     }
-
-    /** Fix unpaired tool_calls and stray tool messages. */
+    
     fun fixToolCallPairing(messages: JSONArray): Pair<JSONArray, Int> {
         val out = JSONArray()
         var dropped = 0
@@ -127,22 +104,13 @@ object ReasonixCacheOptimizer {
             val msg = messages.getJSONObject(i)
             if (msg.optString("role") == "assistant" && msg.has("tool_calls")) {
                 val calls = msg.optJSONArray("tool_calls") ?: JSONArray()
-                if (calls.length() == 0) {
-                    out.put(msg)
-                    i++
-                    continue
-                }
+                if (calls.length() == 0) { out.put(msg); i++; continue }
                 val needed = mutableSetOf<String>()
                 for (ci in 0 until calls.length()) {
-                    val call = calls.optJSONObject(ci)
-                    val id = call?.optString("id", "")?.trim() ?: ""
+                    val id = calls.optJSONObject(ci)?.optString("id", "")?.trim() ?: ""
                     if (id.isNotEmpty()) needed.add(id)
                 }
-                if (needed.isEmpty()) {
-                    out.put(msg)
-                    i++
-                    continue
-                }
+                if (needed.isEmpty()) { out.put(msg); i++; continue }
                 val candidates = mutableListOf<JSONObject>()
                 var j = i + 1
                 while (j < messages.length() && needed.isNotEmpty()) {
@@ -169,25 +137,32 @@ object ReasonixCacheOptimizer {
             }
             i++
         }
+        if (dropped > 0) Log.w(TAG, "fixToolCallPairing: dropped $dropped unpaired/stray messages")
+        else Log.d(TAG, "fixToolCallPairing: no pairing issues")
         return Pair(out, dropped)
     }
-
-    /** One-stop pre-send repair pipeline. */
-    fun healMessagesBeforeSend(
-        messages: JSONArray,
-        model: String,
-        enableDropThinking: Boolean = true
-    ): JSONArray {
+    
+    fun healMessagesBeforeSend(messages: JSONArray, model: String, enableDropThinking: Boolean = true): JSONArray {
+        val t0 = System.currentTimeMillis()
+        val origCount = messages.length()
+        Log.d(TAG, "healMessagesBeforeSend: IN messages=$origCount model=$model dropThinking=$enableDropThinking")
+        
         var working = messages
-        val (stamped) = stampMissingReasoning(working, model)
+        val (stamped, stampCount) = stampMissingReasoning(working, model)
         working = stamped
+        
         if (enableDropThinking) {
             working = dropThinkingMessages(working)
         }
-        val (shrunk) = shrinkOversizedToolResults(working)
+        
+        val (shrunk, shrinkCount) = shrinkOversizedToolResults(working)
         working = shrunk
-        val (paired) = fixToolCallPairing(working)
+        
+        val (paired, dropCount) = fixToolCallPairing(working)
         working = paired
+        
+        val elapsed = System.currentTimeMillis() - t0
+        Log.d(TAG, "healMessagesBeforeSend: OUT messages=${working.length()} stamp=$stampCount shrink=$shrinkCount drop=$dropCount (${elapsed}ms)")
         return working
     }
 }
