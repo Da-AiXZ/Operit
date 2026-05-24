@@ -84,15 +84,18 @@ android {
         val releaseSigningConfig = signingConfigs.findByName("release")
 
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
             if (releaseSigningConfig != null) {
                 signingConfig = releaseSigningConfig
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
             }
+            applicationIdSuffix = ".debug"
         }
         debug {
             applicationIdSuffix = ".debug"
