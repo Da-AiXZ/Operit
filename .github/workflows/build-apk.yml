@@ -11,23 +11,11 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - name: Checkout with top-level submodules
+      - name: Checkout with submodules
         uses: actions/checkout@v4
         with:
           submodules: true
           fetch-depth: 0
-
-      - name: Recursive submodule init (with bullet3 fix)
-        run: |
-          git submodule foreach --recursive 'git submodule update --init 2>/dev/null || true'
-          # bullet3 stub for saba
-          mkdir -p mmd/third_party/saba/third_party/bullet3
-          [ ! -f mmd/third_party/saba/third_party/bullet3/CMakeLists.txt ] && {
-            echo "cmake_minimum_required(VERSION 3.10)" > mmd/third_party/saba/third_party/bullet3/CMakeLists.txt
-            echo "project(bullet3)" >> mmd/third_party/saba/third_party/bullet3/CMakeLists.txt
-          }
-          echo "=== Submodule status ==="
-          git submodule status
 
       - name: Set up JDK17
         uses: actions/setup-java@v4
