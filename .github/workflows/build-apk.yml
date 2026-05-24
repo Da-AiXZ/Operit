@@ -30,15 +30,25 @@ jobs:
           build-tools: "36.0.0"
           cmake: "3.22.1"
 
-      - name: Download vendored libs from Google Drive
+      - name: Download all vendored dependencies from Google Drive
         run: |
           pip install gdown
-          mkdir -p app/libs
-          gdown --folder "1g-Q_i7cf6Ua4KX9ZM6V282EEZvTVVfF7" -O /tmp/drive_dl/ --remaining-ok
-          if [ -f /tmp/drive_dl/libs.zip ]; then
-            unzip -o /tmp/drive_dl/libs.zip -d app/libs/
+          gdown --folder "1g-Q_i7cf6Ua4KX9ZM6V282EEZvTVVfF7" -O /tmp/gdrive/ --remaining-ok
+          ls -la /tmp/gdrive/
+          # Extract libs
+          if [ -f /tmp/gdrive/libs.zip ]; then
+            mkdir -p app/libs
+            unzip -o /tmp/gdrive/libs.zip -d app/libs/
+            echo "libs.zip extracted"
           fi
-          ls -la app/libs/
+          # Extract jniLibs
+          if [ -f /tmp/gdrive/jniLibs.zip ]; then
+            mkdir -p app/src/main/jniLibs
+            unzip -o /tmp/gdrive/jniLibs.zip -d app/src/main/jniLibs/
+            echo "jniLibs.zip extracted"
+          fi
+          ls app/libs/ | head -5
+          ls app/src/main/jniLibs/ 2>/dev/null | head -5
 
       - name: Generate local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
