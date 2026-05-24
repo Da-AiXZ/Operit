@@ -11,18 +11,20 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - name: Checkout with submodules
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Fix missing bullet3 submodule
+      - name: Init submodules manually
         run: |
-          if [ -d mmd/third_party/saba ]; then
-            cd mmd/third_party/saba
-            git submodule update --init --recursive 2>/dev/null ||               (mkdir -p third_party/bullet3 && echo "bullet3 stub" > third_party/bullet3/.gitkeep)
+          git submodule sync --recursive
+          git submodule update --init --recursive || true
+          # bullet3 is inside saba but not in parent .gitmodules, stub it
+          if [ -d mmd/third_party/saba/third_party ] && [ ! -f mmd/third_party/saba/third_party/bullet3/CMakeLists.txt ]; then
+            mkdir -p mmd/third_party/saba/third_party/bullet3
+            echo "project(bullet3)" > mmd/third_party/saba/third_party/bullet3/CMakeLists.txt
           fi
 
       - name: Set up JDK17
