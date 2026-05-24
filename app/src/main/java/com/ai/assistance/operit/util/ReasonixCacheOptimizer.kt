@@ -71,24 +71,43 @@ object ReasonixCacheOptimizer {
         else -> null
     }
 
-    /** 粗略 token 估算：英语 ~4 字符/token，CJK ~2 字符/token */
+    // ── 精确 token 估算（对标 Reasonix tokenizer.ts）───────────────────────
+    // DeepSeek V4 BPE tokenizer 校准比率：ASCII ~0.25 tok/char，CJK ~0.55 tok/char
+    private const val BOUNDED_TOKENIZE_CHARS = 2048  // 对标 countTokensBounded 阈值
+
     private fun estimateTokens(text: String): Int {
-        var tokens = 0
+        if (text.isEmpty()) return 0
+        var asciiChars = 0
+        var cjkChars = 0
         for (ch in text) {
-            tokens += if (ch.code > 127) 1 else 0  // CJK 等宽字符 ≈ 2 token
+            if (ch.code <= 127) asciiChars++ else cjkChars++
         }
-        return (text.length + tokens) / 2  // 混合平均
+        return maxOf((asciiChars * 0.25 + cjkChars * 0.55).toInt(), 1)
+    }
+
+    /** 对标 Reasonix countTokensBounded：≤2048 精确估算，超限采样头尾 */
+    private fun estimateTokensBounded(text: String): Int {
+        if (text.isEmpty()) return 0
+        if (text.length <= BOUNDED_TOKENIZE_CHARS) return estimateTokens(text)
+        val headChars = BOUNDED_TOKENIZE_CHARS / 2
+        val tailChars = BOUNDED_TOKENIZE_CHARS / 2
+        val head = text.take(headChars)
+        val tail = text.takeLast(tailChars)
+        val sampleTokens = estimateTokens(head) + estimateTokens(tail)
+        val sampleChars = head.length + tail.length
+        val ratio = if (sampleChars > 0) sampleTokens.toDouble() / sampleChars else 0.25
+        return maxOf((text.length * ratio).toInt(), 1)
     }
 
     private fun estimateMessageTokens(msg: JSONObject): Int {
         val content = msg.optString("content", "")
         val rc = msg.optString("reasoning_content", "")
         val tc = msg.optJSONArray("tool_calls")
-        var t = estimateTokens(content) + estimateTokens(rc)
+        var t = estimateTokensBounded(content) + estimateTokensBounded(rc)
         if (tc != null) {
             for (i in 0 until tc.length()) {
                 val call = tc.optJSONObject(i) ?: continue
-                t += estimateTokens(call.optJSONObject("function")?.optString("arguments", "") ?: "")
+                t += estimateTokensBounded(call.optJSONObject("function")?.optString("arguments", "") ?: "")
             }
         }
         return maxOf(t, 1)
