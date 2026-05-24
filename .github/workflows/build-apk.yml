@@ -38,7 +38,11 @@ jobs:
           api-level: 36
           build-tools: "36.0.0"
           cmake: "3.22.1"
-          ndk: "27.0.12077973"
+
+      - name: Install exact NDK version
+        run: |
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --install "ndk;27.0.12077973"
+          echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/27.0.12077973" >> local.properties
 
       - name: Ensure libs directory exists
         run: mkdir -p app/libs
