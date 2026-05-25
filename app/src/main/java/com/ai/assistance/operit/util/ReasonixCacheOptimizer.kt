@@ -798,8 +798,10 @@ object ReasonixCacheOptimizer {
     private const val HISTORY_FOLD_AGGRESSIVE_THRESHOLD = 0.70
     private const val HISTORY_FOLD_AGGRESSIVE_TAIL_FRACTION = 0.10
     private const val HISTORY_FOLD_MIN_SAVINGS = 0.30
-    const val const val HISTORY_FOLD_MARKER =
-        "[CONVERSATION HISTORY SUMMARY — earlier turns folded for context efficiency]\n\n"* 根据实际 promptTokens 判断是否需要折叠 */
+    const val HISTORY_FOLD_MARKER =
+        "[CONVERSATION HISTORY SUMMARY — earlier turns folded for context efficiency]\n\n"
+
+    /** 根据实际 promptTokens 判断是否需要折叠 */
     fun shouldFoldHistory(promptTokens: Int, ctxMax: Int = DEEPSEEK_CTX_TOKENS): Boolean {
         return promptTokens.toDouble() / ctxMax > HISTORY_FOLD_THRESHOLD
     }
