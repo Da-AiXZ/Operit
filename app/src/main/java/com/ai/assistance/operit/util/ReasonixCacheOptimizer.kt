@@ -751,8 +751,8 @@ object ReasonixCacheOptimizer {
     /** 归一化用户消息：去标点、trim、小写 → SHA-256 前16位 */
     private fun normalizeMessageForCache(content: String): String {
         return content.trim().lowercase()
-            .replace(Regex("[\p{Punct}]"), " ")
-            .replace(Regex("\s+"), " ")
+            .replace(Regex("""[\p{Punct}]"""), " ")
+            .replace(Regex("""\s+"""), " ")
             .trim()
     }
 
