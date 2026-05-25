@@ -77,13 +77,10 @@ object ReasonixCacheOptimizer {
     private var tokenizerLoaded = false
 
     @Synchronized
-    fun ensureTokenizerLoaded(context: android.content.Context? = null) {
+    fun ensureTokenizerLoaded(context: android.content.Context) {
         if (tokenizerLoaded) return
-        val ctx = context
-        if (ctx != null) {
-            DeepSeekTokenizer.ensureLoaded(ctx)
-            tokenizerLoaded = true
-        }
+        DeepSeekTokenizer.ensureLoaded(context)
+        tokenizerLoaded = true
     }
 
     private fun estimateTokens(text: String): Int {
@@ -169,7 +166,7 @@ object ReasonixCacheOptimizer {
                 val rc = msg.optString("reasoning_content", "")
                 estSavedTokens += estimateTokens(rc)
                 val cleaned = JSONObject(msg.toString())
-                cleaned.put("reasoning_content", JSONObject.NULL)
+                cleaned.remove("reasoning_content")
                 out.put(cleaned)
                 stripped++
             } else {
@@ -183,7 +180,7 @@ object ReasonixCacheOptimizer {
     // ═══════════════════════════════════════════════════════════════════════════
     // 3. stripHallucinatedToolMarkup — 清理 DSML 幻觉标记
     // ═══════════════════════════════════════════════════════════════════════════
-    fun stripHallucinatedToolMarkup(messages: JSONArray): JSONArray {
+    fun stripHallucinatedToolMarkup(messages: JSONArray): Pair<JSONArray, Int> {
         val out = JSONArray()
         var cleaned = 0
         for (i in 0 until messages.length()) {
@@ -210,7 +207,7 @@ object ReasonixCacheOptimizer {
             out.put(msg)
         }
         if (cleaned > 0) log("stripHallucinatedToolMarkup: 清理了 $cleaned 条幻觉 DSML 标记")
-        return out
+        return Pair(out, cleaned)
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -447,6 +444,7 @@ object ReasonixCacheOptimizer {
     // ═══════════════════════════════════════════════════════════════════════════
     // 8. stormBreak — 抑制滑动窗口内重复的 (name,args) 工具调用
     // ═══════════════════════════════════════════════════════════════════════════
+    @Synchronized
     fun stormBreak(messages: JSONArray): Pair<JSONArray, Int> {
         val lastMsg = if (messages.length() > 0) messages.getJSONObject(messages.length() - 1) else null
         if (lastMsg == null || lastMsg.optString("role") != "assistant" || !lastMsg.has("tool_calls")) {
@@ -661,7 +659,10 @@ object ReasonixCacheOptimizer {
         }
 
         // Step 3: stripHallucinatedToolMarkup
-        working = stripHallucinatedToolMarkup(working)
+        run {
+            val (out, n) = stripHallucinatedToolMarkup(working)
+            working = out; stripCount = n
+        }
         // (cleaned count reported internally)
 
         // Step 4: scavengeToolCalls
