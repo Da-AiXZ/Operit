@@ -149,12 +149,23 @@ class DeepseekProvider(
                 providerReadyHistory,
                 effectiveEnableToolCall
             )
-        // ── Reasonix cache-first: check cache before API call ──
+        // ── Reasonix cache-first: check cache (file-backed + history dedup) before API call ──
         val lastUserContent = providerReadyHistory.lastOrNull()?.content ?: ""
+        // 1. Try file-backed cache first
         val cachedResponse = ReasonixCacheOptimizer.cacheLookup(lastUserContent)
         if (cachedResponse != null) {
             jsonObject.put("messages", JSONArray().apply { put(cachedResponse) })
-            AppLogger.d("DeepseekProvider", "Cache HIT, skipping API call")
+            AppLogger.d("DeepseekProvider", "Cache HIT (file), skipping API call")
+            return createJsonRequestBody(jsonObject.toString())
+        }
+        // 2. History-based dedup: if last user message matches an earlier user message,
+        //    return the assistant response that followed it
+        val dedupHit = ReasonixCacheOptimizer.historyDedupLookup(lastUserContent, providerReadyHistory)
+        if (dedupHit != null) {
+            jsonObject.put("messages", JSONArray().apply { put(dedupHit) })
+            AppLogger.d("DeepseekProvider", "Cache HIT (history dedup), skipping API call")
+            // Also store in file cache for future
+            ReasonixCacheOptimizer.cacheStore(lastUserContent, dedupHit)
             return createJsonRequestBody(jsonObject.toString())
         }
         // ── Reasonix fold check: estimate and fold if needed ──
