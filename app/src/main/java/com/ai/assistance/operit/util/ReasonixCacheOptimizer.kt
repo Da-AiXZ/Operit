@@ -629,7 +629,6 @@ object ReasonixCacheOptimizer {
         ctxMax: Int = DEEPSEEK_CTX_TOKENS,
         allowedToolNames: Set<String> = emptySet()
     ): JSONArray {
-        ensureTokenizerLoaded()
         val t0 = System.currentTimeMillis()
         val origCount = messages.length()
         log("========== healMessagesBeforeSend 开始 ==========")
