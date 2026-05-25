@@ -98,7 +98,6 @@ android {
             applicationIdSuffix = ".debug"
         }
         debug {
-            applicationIdSuffix = ".debug"
             if (releaseSigningConfig != null) {
                 signingConfig = releaseSigningConfig
             }
