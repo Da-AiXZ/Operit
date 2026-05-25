@@ -3125,7 +3125,7 @@ class EnhancedAIService private constructor(private val context: Context) {
             if (allTurns.size < 6) return  // 消息太少没必要折叠
             val ctxMax = maxTokens.coerceAtLeast(1)
             val aggressive = com.ai.assistance.operit.util.ReasonixCacheOptimizer.shouldAggressiveFold(
-                com.ai.assistance.operit.api.chat.EnhancedAIService.accumulatedInputTokenCount,
+                accumulatedInputTokenCount,
                 ctxMax
             )
             val tailFraction = if (aggressive)
