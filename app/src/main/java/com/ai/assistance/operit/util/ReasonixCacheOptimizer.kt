@@ -79,8 +79,13 @@ object ReasonixCacheOptimizer {
     @Synchronized
     fun ensureTokenizerLoaded(context: android.content.Context) {
         if (tokenizerLoaded) return
-        DeepSeekTokenizer.ensureLoaded(context)
-        tokenizerLoaded = true
+        try {
+            DeepSeekTokenizer.ensureLoaded(context)
+            tokenizerLoaded = true
+            log("ensureTokenizerLoaded: DeepSeek V4 BPE tokenizer loaded")
+        } catch (e: Exception) {
+            log("ensureTokenizerLoaded: failed to load tokenizer (\${e.message}), using heuristic fallback")
+        }
     }
 
     private fun estimateTokens(text: String): Int {
