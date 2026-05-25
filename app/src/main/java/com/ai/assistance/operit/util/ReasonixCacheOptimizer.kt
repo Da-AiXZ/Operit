@@ -38,7 +38,7 @@ object ReasonixCacheOptimizer {
     private const val STORM_THRESHOLD = 3
     private const val PREFLIGHT_EMERGENCY_THRESHOLD = 0.95
     private const val PREFLIGHT_MECHANICAL_TARGET = 0.70
-    private const val DEEPSEEK_CTX_TOKENS = 1_000_000  // V4 上下文（对标 Reasonix stats.ts）
+    const val DEEPSEEK_CTX_TOKENS = 1_000_000  // V4 上下文（对标 Reasonix stats.ts）
 
     // ── Storm 状态（全局滑动窗口，跨请求持久）────────────────────────────────
     private data class StormEntry(val name: String, val args: String, val readOnly: Boolean)
@@ -107,7 +107,7 @@ object ReasonixCacheOptimizer {
         return maxOf((text.length * ratio).toInt(), 1)
     }
 
-    internal fun estimateMessageTokens(msg: JSONObject): Int {
+    fun estimateMessageTokens(msg: JSONObject): Int {
         val content = msg.optString("content", "")
         val rc = msg.optString("reasoning_content", "")
         val tc = msg.optJSONArray("tool_calls")
