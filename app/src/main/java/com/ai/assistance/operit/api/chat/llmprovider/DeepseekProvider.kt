@@ -46,8 +46,6 @@ class DeepseekProvider(
         supportsVideo = supportsVideo,
         enableToolCall = enableToolCall
     ) {
-    @Volatile
-    private var _cachedResponse: org.json.JSONObject? = null
 
 
     /**
@@ -151,15 +149,6 @@ class DeepseekProvider(
                 providerReadyHistory,
                 effectiveEnableToolCall
             )
-        // ── cache-first loop: 检查缓存命中 ──
-        val lastUserMsg = messagesArray.optJSONObject(messagesArray.length() - 1)
-        val cached = if (lastUserMsg?.optString("role") == "user") {
-            com.ai.assistance.operit.util.ReasonixCacheOptimizer.cacheLookup(lastUserMsg.optString("content", ""))
-        } else null
-        if (cached != null) {
-            // 缓存命中 → 直接构建响应，跳过 API 调用
-            _cachedResponse = cached
-        }
         val healedMessages = ReasonixCacheOptimizer.healMessagesBeforeSend(messagesArray, modelName)
         jsonObject.put("messages", healedMessages)
 
@@ -484,17 +473,6 @@ class DeepseekProvider(
         onNonFatalError: suspend (error: String) -> Unit,
         enableRetry: Boolean
     ): Stream<String> {
-        // ── cache-first loop: 如果缓存命中，直接返回 ──
-        _cachedResponse?.let { cached ->
-            _cachedResponse = null
-            com.ai.assistance.operit.util.AppLogger.d("DeepseekProvider", "cache HIT — returning cached response")
-            return object : com.ai.assistance.operit.util.stream.Stream<String> {
-                override suspend fun collect(collector: kotlinx.coroutines.flow.FlowCollector<String>) {
-                    val content = cached.optString("content", "")
-                    if (content.isNotEmpty()) collector.emit(content)
-                }
-            }
-        }
 
         // 直接调用父类的sendMessage实现
         return super.sendMessage(context, chatHistory, modelParameters, enableThinking, stream, availableTools, preserveThinkInHistory, onTokensUpdated, onNonFatalError, enableRetry)
@@ -506,51 +484,6 @@ class DeepseekProvider(
      * 对标 Reasonix ContextManager.summarizeForFold()。
      * 使用 deepseek-v4-flash 作为摘要模型，非流式调用，15 秒超时。
      */
-    suspend fun summarizeForFold(
-        messages: org.json.JSONArray,
-        summaryModel: String = "deepseek-v4-flash"
-    ): String? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        try {
-            val requestJson = org.json.JSONObject().apply {
-                put("model", summaryModel)
-                put("messages", messages)
-                put("stream", false)
-                put("max_tokens", 1024)
-                put("temperature", 0.3)
-                val thinkingObj = org.json.JSONObject()
-                thinkingObj.put("type", "enabled")
-                put("thinking", thinkingObj)
-            }
-            val requestBody = requestJson.toString().toRequestBody(
-                okhttp3.MediaType.get("application/json; charset=utf-8")
-            )
-            val requestBuilder = okhttp3.Request.Builder()
-                .url(apiEndpoint)
-                .post(requestBody)
-                .addHeader("Content-Type", "application/json")
-                .addHeader("Authorization", "Bearer $\{apiKeyProvider.getApiKey()}")
-            for ((key, value) in customHeaders) {
-                requestBuilder.addHeader(key, value)
-            }
-            val response = client.newCall(requestBuilder.build()).execute()
-            val body = response.body?.string() ?: return@withContext null
-            response.close()
-            val respJson = org.json.JSONObject(body)
-            val choices = respJson.optJSONArray("choices")
-            val firstChoice = choices?.optJSONObject(0)
-            val message = firstChoice?.optJSONObject("message")
-            val content = message?.optString("content", "")?.trim()
-            if (content.isNullOrEmpty()) {
-                com.ai.assistance.operit.util.AppLogger.w("DeepseekProvider", "fold summary returned empty content")
-                null
-            } else {
-                com.ai.assistance.operit.util.AppLogger.d("DeepseekProvider", "fold summary: $\{content.length} chars")
-                content
-            }
-        } catch (e: Exception) {
-            com.ai.assistance.operit.util.AppLogger.w("DeepseekProvider", "fold summary failed", e)
-            null
-        }
-    }
+
 
 }
