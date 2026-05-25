@@ -3106,11 +3106,5 @@ class EnhancedAIService private constructor(private val context: Context) {
 
 
 
-    /**
-     * Reasonix fold：用 Operit 自带总结器压缩对话历史。
-     * 对标 Reasonix ContextManager.fold()。
-     * 不停止对话——替换旧 turns 为摘要，无缝继续。
-     */
-
 
 }
