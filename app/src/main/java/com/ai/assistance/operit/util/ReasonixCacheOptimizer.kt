@@ -38,7 +38,7 @@ object ReasonixCacheOptimizer {
     private const val STORM_THRESHOLD = 3
     private const val PREFLIGHT_EMERGENCY_THRESHOLD = 0.95
     private const val PREFLIGHT_MECHANICAL_TARGET = 0.70
-    private const val DEEPSEEK_CTX_TOKENS = 65536  // V4 上下文
+    private const val DEEPSEEK_CTX_TOKENS = 1_000_000  // V4 上下文（对标 Reasonix stats.ts）
 
     // ── Storm 状态（全局滑动窗口，跨请求持久）────────────────────────────────
     private data class StormEntry(val name: String, val args: String, val readOnly: Boolean)
@@ -714,6 +714,71 @@ object ReasonixCacheOptimizer {
 
 
     // ═══════════════════════════════════════════════════════════════════════════
+    
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // cache-first loop — 归一化+哈希缓存命中（对标 Reasonix 同机制）
+    // ═══════════════════════════════════════════════════════════════════════════
+    private const val CACHE_MAX_SIZE = 16
+
+    private data class CachedResponse(
+        val content: String,
+        val reasoningContent: String,
+        val toolCalls: String  // JSON array string
+    )
+
+    private val responseCache = object : LinkedHashMap<String, CachedResponse>(CACHE_MAX_SIZE, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedResponse>?): Boolean {
+            return size > CACHE_MAX_SIZE
+        }
+    }
+
+    @Synchronized
+    fun resetCache() { responseCache.clear() }
+
+    /** 归一化用户消息：去标点、trim、小写 → SHA-256 前16位 */
+    private fun normalizeMessageForCache(content: String): String {
+        return content.trim().lowercase()
+            .replace(Regex("[\p{Punct}]"), " ")
+            .replace(Regex("\s+"), " ")
+            .trim()
+    }
+
+    private fun hashForCache(normalized: String): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        return digest.digest(normalized.toByteArray()).take(8).joinToString("") { "%02x".format(it) }
+    }
+
+    /** 查询缓存：命中返回已缓存的 assistant 消息 JSON，未命中返回 null */
+    fun cacheLookup(lastUserContent: String): JSONObject? {
+        val normalized = normalizeMessageForCache(lastUserContent)
+        if (normalized.length < 20) return null  // 太短不缓存
+        val key = hashForCache(normalized)
+        val cached = responseCache[key] ?: return null
+        val msg = JSONObject()
+        msg.put("role", "assistant")
+        msg.put("content", cached.content)
+        if (cached.reasoningContent.isNotEmpty()) msg.put("reasoning_content", cached.reasoningContent)
+        if (cached.toolCalls.isNotEmpty() && cached.toolCalls != "[]") {
+            msg.put("tool_calls", JSONArray(cached.toolCalls))
+        }
+        log("cacheLookup: HIT for key=$key")
+        return msg
+    }
+
+    /** 存储缓存：API 响应成功后调用 */
+    @Synchronized
+    fun cacheStore(lastUserContent: String, assistantMessage: JSONObject) {
+        val normalized = normalizeMessageForCache(lastUserContent)
+        if (normalized.length < 20) return
+        val key = hashForCache(normalized)
+        val content = assistantMessage.optString("content", "")
+        val rc = assistantMessage.optString("reasoning_content", "")
+        val tc = assistantMessage.optJSONArray("tool_calls")?.toString() ?: "[]"
+        responseCache[key] = CachedResponse(content, rc, tc)
+        log("cacheStore: stored key=$key (cache size=${responseCache.size})")
+    }
+
     // fold / compactHistory — LLM 摘要折叠（对标 Reasonix context-manager.ts）
     // ═══════════════════════════════════════════════════════════════════════════
     private const val HISTORY_FOLD_THRESHOLD = 0.50
