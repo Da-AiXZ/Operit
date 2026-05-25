@@ -1140,10 +1140,6 @@ class EnhancedAIService private constructor(private val context: Context) {
                     AppLogger.d(
                             TAG,
                             "Token count updated for $functionType. Input: $inputTokens, Output: $outputTokens, CachedInput: $cachedInputTokens. Turn Accumulated: $accumulatedInputTokenCount, $accumulatedOutputTokenCount, $accumulatedCachedInputTokenCount"
-                // ── Reasonix fold: 用 Operit 自带的总结器压缩历史 ──
-                launch {
-                    tryFoldHistory(context, maxTokens)
-                }
                     )
                     logMessageTiming(
                         stage = "enhanced.sendMessage.streamComplete",
@@ -3115,65 +3111,6 @@ class EnhancedAIService private constructor(private val context: Context) {
      * 对标 Reasonix ContextManager.fold()。
      * 不停止对话——替换旧 turns 为摘要，无缝继续。
      */
-    private suspend fun tryFoldHistory(
-        context: EnhancedAIContext,
-        maxTokens: Int
-    ) {
-        try {
-            val allTurns = context.conversationHistory.toList()
-            if (allTurns.size < 8) return  // 消息太少
-            val ctxMax = maxTokens.coerceAtLeast(1)
-            val optimizer = com.ai.assistance.operit.util.ReasonixCacheOptimizer
 
-            // 判断是否需要折叠及折叠强度
-            val aggressive = optimizer.shouldAggressiveFold(accumulatedInputTokenCount, ctxMax)
-            if (!optimizer.shouldFoldHistory(accumulatedInputTokenCount, ctxMax) && !aggressive) return
-
-            val tailFraction = if (aggressive) 0.10 else 0.20
-            val tailBudget = (ctxMax * tailFraction).toInt()
-
-            // 转为 JSONArray 估算 token
-            val messagesJson = org.json.JSONArray()
-            for (turn in allTurns) {
-                val msg = org.json.JSONObject()
-                msg.put("role", turn.role)
-                msg.put("content", turn.content)
-                messagesJson.put(msg)
-            }
-
-            val boundary = optimizer.calculateFoldBoundary(messagesJson, tailBudget)
-            if (boundary <= 0 || boundary >= allTurns.size - 2) return
-
-            // 检查节省是否足够
-            val headTokens = (0 until boundary).sumOf {
-                optimizer.estimateMessageTokens(messagesJson.getJSONObject(it))
-            }
-            val totalTokens = (0 until allTurns.size).sumOf {
-                optimizer.estimateMessageTokens(messagesJson.getJSONObject(it))
-            }
-            if (totalTokens > 0 && headTokens.toDouble() / totalTokens < 0.30) return
-
-            // 用 Operit 自带总结器
-            val headTurns = allTurns.take(boundary)
-            val summaryContent = generateSummaryFromPromptTurns(headTurns, null)
-            if (summaryContent.isBlank()) return
-
-            // 替换历史
-            val summaryTurn = com.ai.assistance.operit.core.chat.hooks.PromptTurn(
-                kind = com.ai.assistance.operit.core.chat.hooks.PromptTurnKind.SUMMARY,
-                content = "[CONVERSATION HISTORY SUMMARY — earlier turns folded for context efficiency]\n\n" + summaryContent
-            )
-            val tail = allTurns.drop(boundary)
-            val newTurns = listOf(summaryTurn) + tail
-
-            context.conversationHistory.clear()
-            context.conversationHistory.addAll(newTurns)
-
-            com.ai.assistance.operit.util.AppLogger.d(TAG,
-                "foldHistory: ${allTurns.size}→${newTurns.size} turns, summary ${summaryContent.length} chars")
-        } catch (e: Exception) {
-            com.ai.assistance.operit.util.AppLogger.w(TAG, "foldHistory failed", e)
-        }
-    }
 
 }
