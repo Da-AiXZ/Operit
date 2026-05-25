@@ -102,7 +102,7 @@ object DeepSeekTokenizer {
 
             loaded = true
         } catch (e: Exception) {
-            throw RuntimeException("Failed to load DeepSeek tokenizer: ${e.message}", e)
+            android.util.Log.w("DeepSeekTokenizer", "Failed to load tokenizer, using heuristic: ${e.message}")
         }
     }
 
