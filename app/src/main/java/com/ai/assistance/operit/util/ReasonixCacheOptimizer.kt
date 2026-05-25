@@ -744,10 +744,55 @@ object ReasonixCacheOptimizer {
         val toolCalls: String  // JSON array string
     )
 
+    // ── File-backed cache (persists across conversations & restarts) ──
+    private const val CACHE_FILE = "reasonix_response_cache.json"
+    private var cacheDir: File? = null
+
+    /** Thread-safe in-memory LRU; file-backed for persistence. */
     private val responseCache = object : LinkedHashMap<String, CachedResponse>(CACHE_MAX_SIZE, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedResponse>?): Boolean {
             return size > CACHE_MAX_SIZE
         }
+    }
+
+    @Synchronized
+    private fun ensureCacheLoaded() {
+        if (responseCache.isNotEmpty()) return
+        val dir = cacheDir ?: return
+        val file = File(dir, CACHE_FILE)
+        if (!file.exists()) return
+        try {
+            val arr = JSONArray(file.readText())
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val key = obj.getString("k")
+                val cr = CachedResponse(obj.getString("c"), obj.optString("r", ""), obj.optString("t", "[]"))
+                responseCache[key] = cr
+            }
+            log("cacheLoaded: ${responseCache.size} entries from $CACHE_FILE")
+        } catch (_: Exception) { file.delete() }
+    }
+
+    @Synchronized
+    private fun persistCache() {
+        val dir = cacheDir ?: return
+        val file = File(dir, CACHE_FILE)
+        try {
+            val arr = JSONArray()
+            for ((k, v) in responseCache) {
+                arr.put(JSONObject().apply {
+                    put("k", k); put("c", v.content)
+                    put("r", v.reasoningContent); put("t", v.toolCalls)
+                })
+            }
+            file.writeText(arr.toString())
+        } catch (e: Exception) { log("persistCache FAIL: ${e.message}") }
+    }
+
+    /** Call once during initialization so cache is ready. */
+    fun initCache(context: Context) {
+        cacheDir = File(context.filesDir, "reasonix_cache").also { it.mkdirs() }
+        ensureCacheLoaded()
     }
 
     @Synchronized
@@ -768,8 +813,9 @@ object ReasonixCacheOptimizer {
 
     /** 查询缓存：命中返回已缓存的 assistant 消息 JSON，未命中返回 null */
     fun cacheLookup(lastUserContent: String): JSONObject? {
+        ensureCacheLoaded()
         val normalized = normalizeMessageForCache(lastUserContent)
-        if (normalized.length < 20) return null  // 太短不缓存
+        if (normalized.length < 5) return null  // 太短不缓存（降低门槛）
         val key = hashForCache(normalized)
         val cached = responseCache[key] ?: return null
         val msg = JSONObject()
@@ -787,12 +833,13 @@ object ReasonixCacheOptimizer {
     @Synchronized
     fun cacheStore(lastUserContent: String, assistantMessage: JSONObject) {
         val normalized = normalizeMessageForCache(lastUserContent)
-        if (normalized.length < 20) return
+        if (normalized.length < 5) return  // was 20, lowered for short messages
         val key = hashForCache(normalized)
         val content = assistantMessage.optString("content", "")
         val rc = assistantMessage.optString("reasoning_content", "")
         val tc = assistantMessage.optJSONArray("tool_calls")?.toString() ?: "[]"
         responseCache[key] = CachedResponse(content, rc, tc)
+        persistCache()
         log("cacheStore: stored key=$key (cache size=${responseCache.size})")
     }
 
