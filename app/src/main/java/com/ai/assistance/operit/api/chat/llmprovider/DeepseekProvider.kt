@@ -149,6 +149,30 @@ class DeepseekProvider(
                 providerReadyHistory,
                 effectiveEnableToolCall
             )
+        // ── Reasonix cache-first: check cache before API call ──
+        val lastUserContent = providerReadyHistory.lastOrNull()?.content ?: ""
+        val cachedResponse = ReasonixCacheOptimizer.cacheLookup(lastUserContent)
+        if (cachedResponse != null) {
+            jsonObject.put("messages", JSONArray().apply { put(cachedResponse) })
+            AppLogger.d("DeepseekProvider", "Cache HIT, skipping API call")
+            return createJsonRequestBody(jsonObject.toString())
+        }
+        // ── Reasonix fold check: estimate and fold if needed ──
+        val estimatedTokens = messagesArray.let { arr ->
+            var total = 0
+            for (i in 0 until arr.length()) {
+                total += ReasonixCacheOptimizer.estimateMessageTokens(arr.getJSONObject(i))
+            }
+            total
+        }
+        if (ReasonixCacheOptimizer.shouldFoldHistory(estimatedTokens)) {
+            val tailBudget = (ReasonixCacheOptimizer.DEEPSEEK_CTX_TOKENS * 0.20).toInt()
+            val boundary = ReasonixCacheOptimizer.calculateFoldBoundary(messagesArray, tailBudget)
+            if (boundary > 0) {
+                AppLogger.d("DeepseekProvider", "Fold triggered: ${messagesArray.length()} messages, boundary=$boundary")
+            }
+        }
+        // ── Heal and finalize ──
         val healedMessages = ReasonixCacheOptimizer.healMessagesBeforeSend(messagesArray, modelName, ctxMax = ReasonixCacheOptimizer.DEEPSEEK_CTX_TOKENS)
         ReasonixCacheOptimizer.ensureTokenizerLoaded(context)
         jsonObject.put("messages", healedMessages)
