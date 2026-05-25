@@ -527,26 +527,7 @@ class DeepseekProvider(
         onTokensUpdated: suspend (input: Int, cachedInput: Int, output: Int) -> Unit,
         onNonFatalError: suspend (error: String) -> Unit,
         enableRetry: Boolean
-    ): Stream<String> {
-
-        // ── Reasonix cache: store response after successful stream ──
-        val lastUserContent = chatHistory.lastOrNull()?.content ?: ""
-        val originalStream = super.sendMessage(context, chatHistory, modelParameters, enableThinking, stream, availableTools, preserveThinkInHistory, onTokensUpdated, onNonFatalError, enableRetry)
-        var collectedContent = StringBuilder()
-        var collectedReasoning = StringBuilder()
-        return originalStream.onEach { chunk ->
-            collectedContent.append(chunk)
-        }.onCompletion { error ->
-            if (error == null && collectedContent.isNotEmpty()) {
-                val msg = JSONObject().apply {
-                    put("role", "assistant")
-                    put("content", collectedContent.toString())
-                    if (collectedReasoning.isNotEmpty()) put("reasoning_content", collectedReasoning.toString())
-                }
-                ReasonixCacheOptimizer.cacheStore(lastUserContent, msg)
-            }
-        }
-    }
+    ): Stream<String> = super.sendMessage(context, chatHistory, modelParameters, enableThinking, stream, availableTools, preserveThinkInHistory, onTokensUpdated, onNonFatalError, enableRetry)
 
 
 }
