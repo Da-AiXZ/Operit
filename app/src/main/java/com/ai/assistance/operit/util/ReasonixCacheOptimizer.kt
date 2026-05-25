@@ -99,7 +99,7 @@ object ReasonixCacheOptimizer {
         return maxOf((text.length * ratio).toInt(), 1)
     }
 
-    private fun estimateMessageTokens(msg: JSONObject): Int {
+    internal fun estimateMessageTokens(msg: JSONObject): Int {
         val content = msg.optString("content", "")
         val rc = msg.optString("reasoning_content", "")
         val tc = msg.optJSONArray("tool_calls")
