@@ -821,7 +821,7 @@ object ReasonixCacheOptimizer {
         val normalized = normalizeMessageForCache(lastUserContent)
         if (normalized.length < 5) return null
         try {
-            for (i in0 until history.size - 1) {
+            for (i in 0 until history.size - 1) {
                 val turn = history[i] ?: continue
                 val content = when (turn) {
                     is com.ai.assistance.operit.core.chat.hooks.PromptTurn -> turn.content
