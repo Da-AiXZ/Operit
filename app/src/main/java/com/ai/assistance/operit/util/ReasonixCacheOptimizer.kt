@@ -711,4 +711,103 @@ object ReasonixCacheOptimizer {
         log("================================================")
         return working
     }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // fold / compactHistory — LLM 摘要折叠（对标 Reasonix context-manager.ts）
+    // ═══════════════════════════════════════════════════════════════════════════
+    private const val HISTORY_FOLD_THRESHOLD = 0.50
+    private const val HISTORY_FOLD_TAIL_FRACTION = 0.20
+    private const val HISTORY_FOLD_AGGRESSIVE_THRESHOLD = 0.70
+    private const val HISTORY_FOLD_AGGRESSIVE_TAIL_FRACTION = 0.10
+    private const val HISTORY_FOLD_MIN_SAVINGS = 0.30
+    const val HISTORY_FOLD_MARKER =
+        "[CONVERSATION HISTORY SUMMARY — earlier turns folded for context efficiency]\n\n"
+
+    /** 根据实际 promptTokens 判断是否需要折叠 */
+    fun shouldFoldHistory(promptTokens: Int, ctxMax: Int = DEEPSEEK_CTX_TOKENS): Boolean {
+        return promptTokens.toDouble() / ctxMax > HISTORY_FOLD_THRESHOLD
+    }
+
+    /** 判断是否需要激进折叠 */
+    fun shouldAggressiveFold(promptTokens: Int, ctxMax: Int = DEEPSEEK_CTX_TOKENS): Boolean {
+        return promptTokens.toDouble() / ctxMax > HISTORY_FOLD_AGGRESSIVE_THRESHOLD
+    }
+
+    /** 计算折叠边界：从尾部累积 token，最后一个 user 消息为边界 */
+    fun calculateFoldBoundary(messages: JSONArray, tailBudgetTokens: Int): Int {
+        val tokenCounts = IntArray(messages.length())
+        for (i in 0 until messages.length()) {
+            tokenCounts[i] = estimateMessageTokens(messages.getJSONObject(i))
+        }
+        var cumTokens = 0
+        var boundary = messages.length()
+        for (i in messages.length() - 1 downTo 0) {
+            if (cumTokens + tokenCounts[i] > tailBudgetTokens) break
+            cumTokens += tokenCounts[i]
+            if (messages.getJSONObject(i).optString("role") == "user") {
+                boundary = i
+            }
+        }
+        return boundary
+    }
+
+    /** 构建折叠用的 summarization 请求消息 */
+    fun buildFoldMessages(headMessages: JSONArray): JSONArray {
+        val messages = JSONArray()
+        messages.put(JSONObject().apply {
+            put("role", "system")
+            put("content", "You compress conversation history for a coding agent. Output one prose recap that preserves: the user's overall goal, decisions and conclusions reached, files inspected or modified, important tool results still relevant to ongoing work, and any open todos. Skip turn-by-turn play-by-play. No tool calls, no markdown headings, no SEARCH/REPLACE blocks — plain prose only.")
+        })
+        for (i in 0 until headMessages.length()) {
+            messages.put(headMessages.getJSONObject(i))
+        }
+        messages.put(JSONObject().apply {
+            put("role", "user")
+            put("content", "Summarize the conversation above as plain prose. This summary replaces the original turns to free context — make it self-contained.")
+        })
+        return messages
+    }
+
+    /** 将摘要内容包装为 assistant 消息 */
+    fun buildFoldResultMessage(summaryContent: String, model: String): JSONObject {
+        val content = HISTORY_FOLD_MARKER + summaryContent
+        val msg = JSONObject()
+        msg.put("role", "assistant")
+        msg.put("content", content)
+        if (isThinkingModeModel(model)) {
+            msg.put("reasoning_content", "")
+        }
+        return msg
+    }
+
+    /** 执行折叠：head 用摘要替换，tail 保留 */
+    fun applyFold(
+        messages: JSONArray,
+        boundary: Int,
+        summaryMsg: JSONObject
+    ): Pair<JSONArray, FoldResult> {
+        val out = JSONArray()
+        out.put(summaryMsg)
+        for (i in boundary until messages.length()) {
+            out.put(messages.getJSONObject(i))
+        }
+        val result = FoldResult(
+            folded = true,
+            beforeMessages = messages.length(),
+            afterMessages = out.length(),
+            summaryChars = summaryMsg.optString("content", "").length
+        )
+        log("foldHistory: 折叠完成! 消息 ${result.beforeMessages}→${result.afterMessages}, " +
+            "摘要字符数 ${result.summaryChars}")
+        return Pair(out, result)
+    }
+
+    data class FoldResult(
+        val folded: Boolean,
+        val beforeMessages: Int,
+        val afterMessages: Int,
+        val summaryChars: Int
+    )
+
 }
