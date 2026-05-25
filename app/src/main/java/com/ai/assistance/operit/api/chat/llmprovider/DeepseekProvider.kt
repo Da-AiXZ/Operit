@@ -46,6 +46,9 @@ class DeepseekProvider(
         supportsVideo = supportsVideo,
         enableToolCall = enableToolCall
     ) {
+    @Volatile
+    private var _cachedResponse: org.json.JSONObject? = null
+
 
     /**
      * 重写创建请求体的方法，以支持DeepSeek的`reasoning_content`参数。
@@ -148,6 +151,15 @@ class DeepseekProvider(
                 providerReadyHistory,
                 effectiveEnableToolCall
             )
+        // ── cache-first loop: 检查缓存命中 ──
+        val lastUserMsg = messagesArray.optJSONObject(messagesArray.length() - 1)
+        val cached = if (lastUserMsg?.optString("role") == "user") {
+            com.ai.assistance.operit.util.ReasonixCacheOptimizer.cacheLookup(lastUserMsg.optString("content", ""))
+        } else null
+        if (cached != null) {
+            // 缓存命中 → 直接构建响应，跳过 API 调用
+            _cachedResponse = cached
+        }
         val healedMessages = ReasonixCacheOptimizer.healMessagesBeforeSend(messagesArray, modelName)
         jsonObject.put("messages", healedMessages)
 
@@ -472,6 +484,18 @@ class DeepseekProvider(
         onNonFatalError: suspend (error: String) -> Unit,
         enableRetry: Boolean
     ): Stream<String> {
+        // ── cache-first loop: 如果缓存命中，直接返回 ──
+        _cachedResponse?.let { cached ->
+            _cachedResponse = null
+            com.ai.assistance.operit.util.AppLogger.d("DeepseekProvider", "cache HIT — returning cached response")
+            return object : com.ai.assistance.operit.util.stream.Stream<String> {
+                override suspend fun collect(collector: kotlinx.coroutines.flow.FlowCollector<String>) {
+                    val content = cached.optString("content", "")
+                    if (content.isNotEmpty()) collector.emit(content)
+                }
+            }
+        }
+
         // 直接调用父类的sendMessage实现
         return super.sendMessage(context, chatHistory, modelParameters, enableThinking, stream, availableTools, preserveThinkInHistory, onTokensUpdated, onNonFatalError, enableRetry)
     }
