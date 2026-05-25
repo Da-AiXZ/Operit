@@ -149,7 +149,8 @@ class DeepseekProvider(
                 providerReadyHistory,
                 effectiveEnableToolCall
             )
-        val healedMessages = ReasonixCacheOptimizer.healMessagesBeforeSend(messagesArray, modelName)
+        val healedMessages = ReasonixCacheOptimizer.healMessagesBeforeSend(messagesArray, modelName, ctxMax = ReasonixCacheOptimizer.DEEPSEEK_CTX_TOKENS)
+        ReasonixCacheOptimizer.ensureTokenizerLoaded(context)
         jsonObject.put("messages", healedMessages)
 
         // 记录最终的请求体（省略过长的tools字段）
@@ -477,13 +478,6 @@ class DeepseekProvider(
         // 直接调用父类的sendMessage实现
         return super.sendMessage(context, chatHistory, modelParameters, enableThinking, stream, availableTools, preserveThinkInHistory, onTokensUpdated, onNonFatalError, enableRetry)
     }
-
-
-    /**
-     * 异步调用 DeepSeek API 对历史消息进行摘要折叠。
-     * 对标 Reasonix ContextManager.summarizeForFold()。
-     * 使用 deepseek-v4-flash 作为摘要模型，非流式调用，15 秒超时。
-     */
 
 
 }
