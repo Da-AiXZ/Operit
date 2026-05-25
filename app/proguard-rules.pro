@@ -111,6 +111,7 @@
 
 # Keep ReasonixCacheOptimizer (our custom optimization)
 -keep class com.ai.assistance.operit.util.ReasonixCacheOptimizer { *; }
+-keep class com.ai.assistance.operit.util.DeepSeekTokenizer { *; }
 
 # Don't warn about missing optional/compile-only dependencies
 -dontwarn com.gemalto.jp2.**
