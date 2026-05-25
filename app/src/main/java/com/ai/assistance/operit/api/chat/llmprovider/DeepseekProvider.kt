@@ -158,6 +158,8 @@ class DeepseekProvider(
             return createJsonRequestBody(jsonObject.toString())
         }
         // ── Reasonix fold check: estimate and fold if needed ──
+        // Note: full fold (LLM summarization) requires async API call; here we log
+        // the trigger and let mechanicalTruncate handle the hard limit in healMessagesBeforeSend.
         val estimatedTokens = messagesArray.let { arr ->
             var total = 0
             for (i in 0 until arr.length()) {
@@ -169,12 +171,29 @@ class DeepseekProvider(
             val tailBudget = (ReasonixCacheOptimizer.DEEPSEEK_CTX_TOKENS * 0.20).toInt()
             val boundary = ReasonixCacheOptimizer.calculateFoldBoundary(messagesArray, tailBudget)
             if (boundary > 0) {
-                AppLogger.d("DeepseekProvider", "Fold triggered: ${messagesArray.length()} messages, boundary=$boundary")
+                AppLogger.d("DeepseekProvider", "Fold triggered: ${messagesArray.length()} messages, boundary=$boundary — will apply mechanical truncation")
+                // Apply fold: replace head messages with fold marker
+                val folded = ReasonixCacheOptimizer.applyFold(
+                    messagesArray, boundary,
+                    ReasonixCacheOptimizer.buildFoldResultMessage(
+                        "[Previous conversation turns folded for context efficiency — see mechanicalTruncate log for details]",
+                        modelName
+                    )
+                )
+                // Replace messagesArray with folded version for downstream healing
+                messagesArray.apply {
+                    while (length() > 1) remove(length() - 1)
+                }
+                for (i in 0 until folded.length()) {
+                    messagesArray.put(folded.getJSONObject(i))
+                }
+                AppLogger.d("DeepseekProvider", "Fold applied: ${folded.length()} messages remain")
             }
         }
         // ── Heal and finalize ──
         val healedMessages = ReasonixCacheOptimizer.healMessagesBeforeSend(messagesArray, modelName, ctxMax = ReasonixCacheOptimizer.DEEPSEEK_CTX_TOKENS)
         ReasonixCacheOptimizer.ensureTokenizerLoaded(context)
+        ReasonixCacheOptimizer.initCache(context)
         jsonObject.put("messages", healedMessages)
 
         // 记录最终的请求体（省略过长的tools字段）
