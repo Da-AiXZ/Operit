@@ -165,19 +165,19 @@ object DeepSeekTokenizer {
         val bytes = s.toByteArray(Charsets.UTF_8)
         val sb = StringBuilder(bytes.size)
         for (b in bytes) {
-            sb.append(byteToChar[b.toInt() and0xFF])
+            sb.append(byteToChar[b.toInt() and 0xFF])
         }
         return sb.toString()
     }
 
     private fun bpeEncode(piece: String): List<String> {
-        if (piece.length <=1) return if (piece.isNotEmpty()) listOf(piece) else emptyList()
+        if (piece.length <= 1) return if (piece.isNotEmpty()) listOf(piece) else emptyList()
         var word = piece.toCharArray().map { it.toString() }.toMutableList()
         while (true) {
             var bestIdx = -1
             var bestRank = Int.MAX_VALUE
-            for (i in0 until word.size -1) {
-                val pair = word[i] + " " + word[i +1]
+            for (i in 0 until word.size - 1) {
+                val pair = word[i] + " " + word[i + 1]
                 val rank = mergeRank[pair] ?: continue
                 if (rank < bestRank) {
                     bestRank = rank
@@ -186,8 +186,8 @@ object DeepSeekTokenizer {
                 }
             }
             if (bestIdx <0) break
-            val merged = word[bestIdx] + word[bestIdx +1]
-            word = (word.take(bestIdx) + merged + word.drop(bestIdx +2)).toMutableList()
+            val merged = word[bestIdx] + word[bestIdx + 1]
+            word = (word.take(bestIdx) + merged + word.drop(bestIdx + 2)).toMutableList()
             if (word.size ==1) break
         }
         return word
