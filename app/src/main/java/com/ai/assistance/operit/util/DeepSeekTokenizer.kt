@@ -77,8 +77,7 @@ object DeepSeekTokenizer {
                 if (p.optString("type") == "Split") {
                     val reStr = p.getJSONObject("pattern").getString("Regex")
                     // Java regex compatibility adjustments
-                    val javaRe = reStr
-                        .replace("\\p", "\\p")  // Unicode properties pass through
+                    val javaRe = reStr  // Unicode properties pass through as-is
                     splitRegexes.add(Regex(javaRe))
                 }
             }
