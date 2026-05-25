@@ -72,30 +72,41 @@ object ReasonixCacheOptimizer {
     }
 
     // ── 精确 token 估算（对标 Reasonix tokenizer.ts）───────────────────────
-    // DeepSeek V4 BPE tokenizer 校准比率：ASCII ~0.25 tok/char，CJK ~0.55 tok/char
-    private const val BOUNDED_TOKENIZE_CHARS = 2048  // 对标 countTokensBounded 阈值
+    // 使用真实 DeepSeek V4 BPE tokenizer（从 assets 加载）
+    // 对标 countTokensBounded: ≤2048 精确，超限采样头尾
+    private var tokenizerLoaded = false
 
-    private fun estimateTokens(text: String): Int {
-        if (text.isEmpty()) return 0
-        var asciiChars = 0
-        var cjkChars = 0
-        for (ch in text) {
-            if (ch.code <= 127) asciiChars++ else cjkChars++
+    @Synchronized
+    fun ensureTokenizerLoaded(context: android.content.Context? = null) {
+        if (tokenizerLoaded) return
+        val ctx = context ?: android.app.ActivityThread.currentApplication()
+        if (ctx != null) {
+            DeepSeekTokenizer.ensureLoaded(ctx)
+            tokenizerLoaded = true
         }
-        return maxOf((asciiChars * 0.25 + cjkChars * 0.55).toInt(), 1)
     }
 
-    /** 对标 Reasonix countTokensBounded：≤2048 精确估算，超限采样头尾 */
+    private fun estimateTokens(text: String): Int {
+        if (!tokenizerLoaded) {
+            // 回退到启发式（首次使用前）
+            var ascii = 0; var cjk = 0
+            for (ch in text) { if (ch.code <= 127) ascii++ else cjk++ }
+            return maxOf((ascii * 0.25 + cjk * 0.55).toInt(), 1)
+        }
+        return maxOf(DeepSeekTokenizer.countTokens(text), 1)
+    }
+
+    private const val BOUNDED_TOKENIZE_CHARS = 2048
+
     private fun estimateTokensBounded(text: String): Int {
         if (text.isEmpty()) return 0
-        if (text.length <= BOUNDED_TOKENIZE_CHARS) return estimateTokens(text)
+        if (!tokenizerLoaded || text.length <= BOUNDED_TOKENIZE_CHARS) return estimateTokens(text)
         val headChars = BOUNDED_TOKENIZE_CHARS / 2
         val tailChars = BOUNDED_TOKENIZE_CHARS / 2
-        val head = text.take(headChars)
-        val tail = text.takeLast(tailChars)
-        val sampleTokens = estimateTokens(head) + estimateTokens(tail)
-        val sampleChars = head.length + tail.length
-        val ratio = if (sampleChars > 0) sampleTokens.toDouble() / sampleChars else 0.25
+        val sample = DeepSeekTokenizer.countTokens(text.take(headChars)) +
+                     DeepSeekTokenizer.countTokens(text.takeLast(tailChars))
+        val sampleChars = (headChars + tailChars).coerceAtMost(text.length)
+        val ratio = sample.toDouble() / sampleChars
         return maxOf((text.length * ratio).toInt(), 1)
     }
 
@@ -620,6 +631,7 @@ object ReasonixCacheOptimizer {
         ctxMax: Int = DEEPSEEK_CTX_TOKENS,
         allowedToolNames: Set<String> = emptySet()
     ): JSONArray {
+        ensureTokenizerLoaded()
         val t0 = System.currentTimeMillis()
         val origCount = messages.length()
         log("========== healMessagesBeforeSend 开始 ==========")
