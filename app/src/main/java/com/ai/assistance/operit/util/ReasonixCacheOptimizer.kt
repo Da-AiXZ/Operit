@@ -812,6 +812,45 @@ object ReasonixCacheOptimizer {
         return digest.digest(normalized.toByteArray()).take(8).joinToString("") { "%02x".format(it) }
     }
 
+    /**
+     * 历史去重查找：在 prompt history 中查找与 lastUserContent 匹配的 user 消息，
+     * 若其后紧跟 assistant 消息，直接返回缓存的回复（跳过 API 调用）。
+     * 跨话题也能命中（只要同一对话历史中有过相同提问）。
+     */
+    fun historyDedupLookup(lastUserContent: String, history: List<*>): JSONObject? {
+        val normalized = normalizeMessageForCache(lastUserContent)
+        if (normalized.length < 5) return null
+        try {
+            for (i in0 until history.size - 1) {
+                val turn = history[i] ?: continue
+                val content = when (turn) {
+                    is com.ai.assistance.operit.core.chat.hooks.PromptTurn -> turn.content
+                    else -> try {
+                        turn.javaClass.getMethod("getContent").invoke(turn) as? String ?: ""
+                    } catch (_: Exception) { continue }
+                }
+                if (normalizeMessageForCache(content) == normalized) {
+                    val next = history.getOrNull(i + 1) ?: continue
+                    val nextContent = when (next) {
+                        is com.ai.assistance.operit.core.chat.hooks.PromptTurn -> next.content
+                        else -> try {
+                            next.javaClass.getMethod("getContent").invoke(next) as? String ?: ""
+                        } catch (_: Exception) { continue }
+                    }
+                    if (nextContent.isNotEmpty()) {
+                        val msg = org.json.JSONObject().apply {
+                            put("role", "assistant")
+                            put("content", nextContent)
+                        }
+                        log("historyDedup: HIT at index $i")
+                        return msg
+                    }
+                }
+            }
+        } catch (_: Exception) { }
+        return null
+    }
+
     /** 查询缓存：命中返回已缓存的 assistant 消息 JSON，未命中返回 null */
     fun cacheLookup(lastUserContent: String): JSONObject? {
         ensureCacheLoaded()
