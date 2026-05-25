@@ -124,10 +124,7 @@
 # Ignore R8 missing class warnings for optional deps
 -ignorewarnings
 
-# ========== BouncyCastle BKS Keystore — fix SSL crash on Release (R8 strips BKS) ==========
--keep class org.bouncycastle.jcajce.provider.keystore.bc.BcKeyStoreSpi { *; }
--keep class org.bouncycastle.jcajce.provider.keystore.bc.BcKeyStoreSpi$BKS { *; }
--keep class org.bouncycastle.jce.provider.BouncyCastleProvider { *; }
+
 -dontwarn org.bouncycastle.**
 
 # ========== QuickJS JNI bridge — fix NoSuchMethodError crash on Release ==========
