@@ -192,13 +192,12 @@ class DeepseekProvider(
                     )
                 )
                 // Replace messagesArray with folded version for downstream healing
-                messagesArray.apply {
-                    while (length() > 1) remove(length() - 1)
+                val (foldedArray, _) = folded
+                while (messagesArray.length() > 0) messagesArray.remove(messagesArray.length() - 1)
+                for (i in 0 until foldedArray.length()) {
+                    messagesArray.put(foldedArray.getJSONObject(i))
                 }
-                for (i in 0 until folded.length()) {
-                    messagesArray.put(folded.getJSONObject(i))
-                }
-                AppLogger.d("DeepseekProvider", "Fold applied: ${folded.length()} messages remain")
+                AppLogger.d("DeepseekProvider", "Fold applied: ${foldedArray.length()} messages remain")
             }
         }
         // ── Heal and finalize ──
