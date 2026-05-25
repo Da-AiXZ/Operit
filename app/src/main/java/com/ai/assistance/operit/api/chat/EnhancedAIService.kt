@@ -1127,6 +1127,17 @@ class EnhancedAIService private constructor(private val context: Context) {
                     val cachedInputTokens = serviceForFunction.cachedInputTokenCount
                     val outputTokens = serviceForFunction.outputTokenCount
                     accumulatedInputTokenCount += inputTokens
+                // ── cache-first store: 缓存本次响应 ──
+                val lastUserMsg = currentChatHistory.lastOrNull()
+                if (lastUserMsg != null && context.streamBuffer.isNotEmpty()) {
+                    val msg = org.json.JSONObject().apply {
+                        put("role", "assistant")
+                        put("content", context.streamBuffer.toString())
+                    }
+                    com.ai.assistance.operit.util.ReasonixCacheOptimizer.cacheStore(
+                        lastUserMsg.content, msg
+                    )
+                }
                     accumulatedOutputTokenCount += outputTokens
                     accumulatedCachedInputTokenCount += cachedInputTokens
                     currentRequestInputTokenCount = 0
